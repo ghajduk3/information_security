@@ -1,0 +1,107 @@
+-------------- SETTING UP FIREWALL USING IPTABLES ------------------
+Iptables  and  ip6tables  are  used to set up, maintain, and inspect the tables of
+IPv4 and IPv6 packet filter rules in the Linux kernel. We are using only iptables for IPv4 and should disable IPv6.
+
+Steps:
+	1) Open the file /etc/sysctl.conf
+		* sudo nano /etc/sysctl.conf
+	2) Add following lines to the open file :
+		net.ipv6.conf.all.disable_ipv6 = 1
+		net.ipv6.conf.default.disable_ipv6 = 1
+		net.ipv6.conf.lo.disable_ipv6 = 1
+	3) Activate changes with :
+		sudo sysctl -p
+	4) Verify that everything is applied and done properly:
+		cat /proc/sys/net/ipv6/conf/all/disable_ipv6 --- should output 1
+
+------------ INSTALL REQUIRED PACKAGES ---------------------
+sudo apt install openssh-server apache2 git curl
+sudo make-ssl-cert generate-default-snakeoil --force-overwrite
+sudo a2ensite default-ssl
+sudo service apache2 restart
+sudo a2enmod ssl
+
+1) Check if Apache2 works by running the web browser and opening both http://localhost and https://localhost. Alternatively, install curl package and test from within the terminal.
+2) Check if SSH server works by running ssh localhost, answer with yes and provide password isp. Press ctrl+d to exit
+
+
+--------------------- SET UP FIREWALL ------------------------------------ 
+1) clone the repo from github 
+	* clone https://github.com/lem-course/isp-iptables.git
+        * chmox +x iptables2.sh
+2) Start the script
+	sudo ./handson-tables.sh start
+	
+	Handson script first filters out and changes policy to drop to all trafic except the localhost
+	To check which rules are activated --- sudo iptables --list -nv 
+ 	
+3) After modifying the script apply the changes with 
+	sudo ./handson-tables.sh restart
+
+------------- IPTABLES rules -------------------------------------------------------
+In iptables there are 3 different tables : FILTER, NAT , MANGLE
+In order to specify to which table the rule is going to be applied add -t TABLE(filter,mangle,nat) switch.
+
+GENERAL IPTABLES MATCH CRITERIA:
+
+-t <-table-> ---------- If you don't specify a table, then the filter table is assumed. As discussed 				before, the possible built-in tables include: filter, nat, mangle
+-j <target> ----------- Jump to the specified target chain when the packet matches the current rule. 
+-F  ------------------- Flush. Deletes all the rules in the selected table 
+-p <protocol-type> ---- Match protocol. Types include, icmp, tcp, udp, and all 
+-s <source ip-address> - Match source IP address
+-d <destination ip-address> - Match destination address 
+-i <interface-name>    - Match "input interface" on which the packet enters
+-o <interface-name>    - Match "output interface" on which the packer exits
+
+EXAMPLE:
+iptables -A INPUT -s 0/0 -i eth0 -d 192.168.1.1  -p TCP -j ACCEPT
+iptables is being configured to allow the firewall to accept TCP packets coming in on interface eth0 from any IP address destined for the firewall's IP address of 192.168.1.1. The 0/0 representation of an IP address means any. 
+
+COMMON TCP and UDP Match Criteria
+
+-p tcp --sport <port> --- TCP source port. Can be a single value or a range in the format: start-port-number:end-port-number
+-p tcp --dport <port> --- TCP destination port. Can be a single value or a range in the format: starting-port:ending-port
+-p tcp --syn  ----------- Used to identify a new TCP connection request. ! --syn means, not a new connection request
+-p udp --sport <port> --- UDP source port. Can be a single value or a range in the format: starting-port:ending-port
+-p udp --dport <port> --- UDP destination port. Can be a single value or a range in the format: starting-port:ending-port
+
+EXAMPLE
+iptables -A FORWARD -s 0/0 -i eth0 -d 192.168.1.58 -o eth1 -p TCP \
+         --sport 1024:65535 --dport 80 -j ACCEPT
+iptables is being configured to allow the firewall to accept TCP packets for routing when they enter on interface eth0 from any IP address and are destined for an IP address of 192.168.1.58 that is reachable via interface eth1. The source port is in the range 1024 to 65535 and the destination port is port 80 (www/http)
+
+
+COMMON EXTENDED MATCH CRITERIA
+
+-m multiport --sports <port, port> ---- A variety of TCP/UDP source ports separated by commas. Unlike when -m isn't used, they do not have to be within a range.
+-m multiport --dports <port, port> ---- A variety of TCP/UDP destination ports separated by commas. Unlike when -m isn't used, they do not have to be within a range.
+-m multiport --ports <port, port>  ---- A variety of TCP/UDP ports separated by commas. Source and destination ports are assumed to be the same and they do not have to be within a range
+
+EXAMPLE
+
+iptables -A FORWARD -s 0/0 -i eth0 -d 192.168.1.58 -o eth1 -p TCP \
+         --sport 1024:65535 -m multiport --dports 80,443 -j ACCEPT
+ 
+iptables -A FORWARD -d 0/0 -o eth0 -s 192.168.1.58 -i eth1 -p TCP \
+         -m state --state ESTABLISHED -j ACCEPT
+
+Here iptables is being configured to allow the firewall to accept TCP packets to be routed when they enter on interface eth0 from any IP address destined for IP address of 192.168.1.58 that is reachable via interface eth1. The source port is in the range 1024 to 65535 and the destination ports are port 80 (www/http) and 443 (https). The return packets from 192.168.1.58 are allowed to be accepted too. Instead of stating the source and destination ports, you can simply allow packets related to established connections using the -m state and --state ESTABLISHED options. 
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+Allow Your Home Network To Access The Firewall
+
+In this example, eth1 is directly connected to a home network using IP addresses from the 192.168.1.0 network. All traffic between this network and the firewall is simplistically assumed to be trusted and allowed.
+
+Further rules will be needed for the interface connected to the Internet to allow only specific ports, types of connections and possibly even remote servers to have access to your firewall and home network. 
+
+#---------------------------------------------------------------
+# Allow all bidirectional traffic from your firewall to the
+# protected network
+# - Interface eth1 is the private network interface
+#---------------------------------------------------------------
+
+iptables -A INPUT   -j ACCEPT -p all -s 192.168.1.0/24 -i eth1
+iptables -A OUTPUT  -j ACCEPT -p all -d 192.168.1.0/24 -o eth1
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------

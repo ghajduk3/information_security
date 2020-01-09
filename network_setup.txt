@@ -1,0 +1,17 @@
+In order to set up network(router), on the router we configure interfaces in /etc/netplan/01-network-manager-all.yaml
+
+network:
+  version: 2
+  ethernets:
+    enp0s3: --- Which interface
+      dhcp4: true
+      dhcp-identifier: mac
+    enp0s8:
+      addresses: [10.0.0.1/24] --- Manually asign addresses to the interface enp0s8
+    enp0s9:
+      addresses: [172.16.0.1/24]
+
+
+In order to apply changes --------- sudo netplan apply
+
+Next, enable routing for IPv4 so that the isp will actually behave as a proper router: echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward

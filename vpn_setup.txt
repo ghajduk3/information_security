@@ -1,0 +1,35 @@
+VPN will be implemented with StrongSwan a open-source implementation of IKE.
+
+First, a machine will be prepared as a basis with all required software.
+
+1) sudo apt update
+2) sudo apt install strongswan strongswan-pki libcharon-extra-plugins ipsec-tools apache2 wireshark
+
+After installing wireshark : sudo usermod -a -G wireshark $USER
+
+----------------- SET UP ROUTERS TO MAKE A VPN TUNNEL --------------------------
+1) On the first router open /etc/ipsec.conf
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+        authby=secret
+
+conn net-net
+        leftsubnet=10.1.0.0/16
+        leftfirewall=yes
+        leftid=@hq
+        right=$BRANCH_IP
+        rightsubnet=10.2.0.0/16
+        rightid=@branch
+        auto=add
+
+Umjesto $BRANCH_IP ---- staviti adresu eksplicitno 
+2) Open file /etc/ipsec.secrets 
+3) Add @hq @branch : PSK "secret"
+

@@ -1,0 +1,19 @@
+1) Install required software:
+	**sudo apt update
+	**sudo apt install freeradius freeradius-utils apache2 libapache2-mod-auth-radius
+
+------------- RADIUS SERVER WITH A TEST CLIENT ----------------------------
+
+In a Radius architecture client is NAS(Network Access Server)
+In order to register such a client:
+1) sudo nano /etc/freeradius/3.0/clients.conf
+2) client localhost {
+    ipaddr = 127.0.0.1
+    secret = testing123
+    require_message_authenticator = no
+    nas_type = other
+}
+
+In order to add users to the freeradius database:
+1) sudo nano /etc/freeradius/3.0/users
+2) 

@@ -15,3 +15,24 @@ network:
 In order to apply changes --------- sudo netplan apply
 
 Next, enable routing for IPv4 so that the isp will actually behave as a proper router: echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+Finally, to route internet-bound traffic from client and server subnets, configure the isp to act as a network address translator (NAT): sudo iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
+
+---------------- SETTING UP REMOTE CLIENT ---------------------- 
+In order to set up a client we should change the /etc/netplan/01-network-manager-all.yaml :
+
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      # assign the IP address
+      addresses: [10.0.0.2/24]
+      # set the default route through isp
+      gateway4: 10.0.0.1
+      # use Google's DNS
+      nameservers:
+        addresses: [8.8.8.8]
+
+In order to apply changes ------ sudo netplan apply
+
+

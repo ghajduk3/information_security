@@ -1,0 +1,54 @@
+1)On the first router edit file /etc/ipsec.conf
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+        authby=secret
+	#To specify which ciphersuite to use for ike or esp
+	ike=aes....
+	esp=aes...
+
+conn net-net
+        leftsubnet=10.1.0.0/16
+        leftfirewall=yes
+        leftid=@hq
+        right=$BRANCH_IP
+        rightsubnet=10.2.0.0/16
+        rightid=@branch
+        auto=add
+
+Then do the same to the other router just with changed ipaddresses
+2) Change the file /etc/ipsec.secrets and add:
+
+@id1 @id2 : PSK "your secret key"
+
+3) After changing the files in order to apply changes :
+	sudo ipsec restart
+------------------- SET UP ROADWARRIOR WITH PSK ---------------------------- 
+1) Add following configuration onto the roadwarrior /etc/ipsec.conf
+conn rw
+        left=192.168.64.133
+        leftfirewall=yes
+        leftsourceip=10.3.0.4
+        leftid=@gojkorw
+        right=192.168.64.131
+        rightsubnet=10.1.0.0/16 #Subnet shoud be 10.0.0.0/16 if we want to send it to anyone which we want
+        rightid=@hq
+        auto=add
+
+2) Add following on the router 
+conn rw
+        left=192.168.64.131
+        leftsubnet=10.1.0.0/16
+        leftfirewall=yes
+        leftid=@hq
+        right=%any
+        rightsourceip=10.3.0.0/16
+        auto=add
+
+

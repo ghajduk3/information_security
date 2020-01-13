@@ -104,4 +104,22 @@ Further rules will be needed for the interface connected to the Internet to allo
 iptables -A INPUT   -j ACCEPT -p all -s 192.168.1.0/24 -i eth1
 iptables -A OUTPUT  -j ACCEPT -p all -d 192.168.1.0/24 -o eth1
 
---------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------ SETTING UP DNS LOOKUP ------------------------------------------
+iptables -A INPUT -p udp --sport 53 -j ACCEPT
+iptables -A INPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -p udp --sport 53 -j ACCEPT
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+
+----------------- LOOKUP ADDRESS OF SOME KNOWN WEB-SITE ----------------------------------- 
+dig +noall +answer facebook.com | cut -f6 | xargs | tr " "
+
+
+
+----------- limit requests ---------------------------
+iptables -A INPUT -p icmp --icmp-type echo-request \
+         -m limit --limit 1/s -i eth0 -j ACCEPT
+
+The limit feature in iptables specifies the maximum average number of matches to allow per second. You can specify time intervals in the format /second, /minute, /hour, or /day, or you can use abbreviations so that 3/second is the same as 3/s.
+
+In this example, ICMP echo requests are restricted to no more than one per second. When tuned correctly, this feature allows you to filter unusually high volumes of traffic that characterize denial of service (DOS) attacks and Internet worms. 

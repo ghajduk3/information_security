@@ -1,0 +1,79 @@
+---------------- PREPARING THE IMAGES -------------------
+In order to install packages required for SSH-SETUP following steps should be applied:
+
+1) sudo apt update 
+2) sudo apt install openssh-server openssh-client wireshark apache2 curl 
+3) Then add your user to the group wireshark with the following command: sudo usermod -a -G wireshark $USER
+
+-------------- CHANGING THE HOSTNAME -----------------------
+1) Open the /etc/hosts 
+2) Add 127.0.1.1 newname
+3) sudo hostnamectl set-hostname ssh-server
+
+------------- GENERATE SSH-KEYS -------------------------------
+sudo ssh-keygen -t ecdsa -f /etc/ssh/ssh_host_ecdsa_key
+sudo ssh-keygen -t rsa   -f /etc/ssh/ssh_host_rsa_key
+sudo ssh-keygen -t dsa   -f /etc/ssh/ssh_host_dsa_key
+sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key
+
+--------------- ADD ENVIRONMENT VARIABLES ---------------------
+1) Open .bashrc
+2) export NameOfVariable = Value
+
+--------------------- SERVER AUTHENTICATION -----------------
+We can check the public key of the server with following commands :
+For ECDSA key: ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.
+For ED25519 key: sh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+For RSA key: ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub
+For DSA key: ssh-keygen -lf /etc/ssh/ssh_host_dsa_key.pub
+
+In order to remove the key from known hosts 
+ ------- ssh-keygen -f "/home/isp/.ssh/known_hosts" -R "192.168.64.126"
+
+-----------------------------------------------------------------------------
+	ENABLING PUBLICK KEY AUTHENTICATION 
+In order to enable public key authentication :
+1) Copy public key to remote computer ----- ssh-copy-id isp@$SERVER
+
+In order to disable password based loging 
+1) sudo nano /etc/ssh/sshd_config
+2) Append PasswordAuthentication no
+
+In order to test have we disabled password based authentication:
+ssh-client: ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no $SERVER
+
+
+
+----------------------- SETTING UP SSH TUNNEL -----------------------------
+Imagine that you'd like to access a service on a remote machine, but that service is configured to allow localhost connections only. To alleviate such limitations, we can use SSH to create a tunnel between our machine and the machine running the service and then access the service as if it was running on our machine.
+
+The SSH will instantiate a local network socket that will forward all traffic to the service socket on the remote machine. To the service on the remote machine, the tunnel will be completely transparent: all requests that are sent through the tunnel will appear to the service as normal requests originating from localhost.
+
+To make this example more concrete, let's configure the Apache webserver on the ssh-server to allow localhost connections only. Open file /etc/apache2/sites-available/000-default.conf and add the following snippet that limits the access to the Apache served pages:
+
+<Directory /var/www/html>
+    Require ip 127.0.0.1/8
+</Directory>
+
+
+
+In order to set up a tunnel:
+ssh -L 127.0.0.1:8080:127.0.0.1:80 -N $SERVER
+
+The -L switch denotes local port-forwarding and the -N prevents executing remote commands; this is useful for only setting up forwarded ports and not actually running terminal on the remote machine.
+
+
+
+---------------------- REVERSE SSH TUNNEL ----------------------------------------
+In order to set up the reverse tunnel 
+1) ssh -R 127.0.0.1:8080:127.0.0.1:80 -N isp@$CLIENT
+
+Setting up reverse tunnel so the local comp can ssh to remote 
+ ssh -R 43022:localhost:22 isp@$CLIENT ---- on server
+ ssh -R localhost:43022:localhost:22 isp@$CLIENT ---- on server
+
+localhost:43022:localhost:22 --- connection requests on local computer(client) on port 43022 should be forwarded to port 22 on remote computer
+
+
+then on client:
+ssh localhost -p 43022

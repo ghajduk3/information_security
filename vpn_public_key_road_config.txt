@@ -1,0 +1,100 @@
+First after configuring the network we need to generate certificates.
+In order to generate certificate we need CA.
+
+1) Generate CA private key:
+	ipsec pki --gen > caKey.der
+2) Self sign the certificate
+	ipsec pki --self --in caKey.der --dn "C=SL, O=FRI-LJ, CN=private CA" --ca > caCert.der
+3) Generate a private key for each router:
+	ipsec pki --gen > ljKey.der
+4) Issue a certificate for each router:
+	ipsec pki --pub --in ljKey.der | ipsec pki --issue --cacert caCert.der --cakey caKey.der --dn "C=SL, O=FRI-UL, CN=lj" --san @lj > ljCert.der
+
+After generating keys and certificates we need to place them into /etc/ipsec.d
+sudo mv caCert.der /etc/ipsec.d/cacerts
+sudo mv ljCert.der /etc/ipsec.d/certs/
+sudo mv ljKey.der /etc/ipsec.d/private/
+
+Next step is to set up SA on routers:
+1) Edit the file /etc/ipsec.conf
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+       # authby=secret
+
+conn net-net
+        leftsubnet=10.1.0.0/16,10.3.0.0/16
+        leftfirewall=yes
+        leftcert=ljCert.der
+        leftid=@lj
+        right=192.168.64.134
+        rightsubnet=10.2.0.0/16
+        rightid=@kr
+        auto=add
+
+
+conn rw
+        left=%defaultroute
+        leftsubnet=10.0.0.0/14
+        leftfirewall=yes
+        leftid=@lj
+        leftcert=ljCert.der
+        right=%any
+        rightsourceip=10.3.0.0/16
+        auto=add
+
+
+
+2) On the roadwarrior:
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+        #authby=secret
+
+conn rw
+        left=%defaultroute
+        leftsourceip=%config
+        leftcert=rwCert.der
+        leftfirewall=yes
+        right=192.168.64.135
+        rightsubnet=10.0.0.0/14
+        rightid=@lj
+        auto=add
+3) On the other router:
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+       # authby=secret
+
+conn net-net 	
+	leftsubnet=10.2.0.0/16
+	leftfirewall=yes
+	leftcert=krCert.der
+	leftid=@kr
+	#remote router	
+	right=192.168.64.135 
+	rightsubnet=10.1.0.0/16
+	rightid=@lj
+	auto=add
+	
+
+
+	
+	

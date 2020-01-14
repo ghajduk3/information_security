@@ -4,7 +4,7 @@ sudo apt-get install openssh-client=1:7.6p1-4
 
 links:
 https://www.strongswan.org/testing/testresults/ikev2/rw-eap-md5-radius/
-
+http://www.linuxhomenetworking.com/wiki/index.php/Quick_HOWTO_:_Ch14_:_Linux_Firewalls_Using_iptables#.Xh3SduF7mV4
 
 
 ################## PREPARING BASE IMAGE ######################3

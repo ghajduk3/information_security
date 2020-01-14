@@ -1,0 +1,405 @@
+if ssh doesnt work : 
+
+sudo apt-get install openssh-client=1:7.6p1-4
+
+links:
+https://www.strongswan.org/testing/testresults/ikev2/rw-eap-md5-radius/
+
+
+
+################## PREPARING BASE IMAGE ######################3
+Configure network adapter 1 to be in bridged mode so the internet access is available
+--------- Installations -------------
+sudo apt update
+sudo apt install openssh-server openssh-client curl
+sudo apt install strongswan strongswan-pki libcharon-extra-plugins ipsec-tools apache2 wireshark
+sudo adduser $USER wireshark
+sudo apt install freeradius freeradius-utils apache2 libapache2-mod-auth-radius
+
+###################### PREPARING LJ_ROUTER #################################
+############################################################################
+1) Clone base image
+2) Select linked clone, and regenerate new mac addresses option
+3) Configure first network interface to be on Bridged mode
+4) Second network interface should be on Internal network which is named lj_network
+
+----Disable ipv6----
+1) sudo nano /etc/sysctl.conf 
+	## Append lines:
+		net.ipv6.conf.all.disable_ipv6 = 1
+		net.ipv6.conf.default.disable_ipv6 = 1
+		net.ipv6.conf.lo.disable_ipv6 = 1
+	##End
+2) Apply changes :
+	# sudo sysctl -p 
+
+----- Configure network interfaces ------------
+1) Open file etc/netplan/01-network-manager-all.yaml
+	## sudo nano /etc/netplan/01-network-manager-all.yaml
+2) Replace contents of the file with following lines :
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+      dhcp-identifier: mac
+    enp0s8:
+      addresses: [10.1.0.1/16]
+
+3) Apply network changes with :
+	## sudo netplan apply
+4) Enable packet forwarding on the router :
+	## echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+5) To route internet-bound traffic from client and server subnets, configure the isp to act as a network address translator (NAT):
+	## sudo iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
+
+--------- Setting up VPN connection between ljub_router and kranj_router ----------------------------
+
+******* GENERATING CERTIFICATES ****************
+1) Generate a private key for CA
+	## ipsec pki --gen > caKey.der
+2) Self-sign the certificate 
+	## ipsec pki --self --in caKey.der --dn "C=SL, O=FRI-LJ, CN=private CA" --ca > caCert.der
+3) Generate a private key for each router:
+	## ipsec pki --gen > ljubKey.der
+	## ipsec pki --gen > kranKey.der
+4) Issue a certificate for each router:
+	## ipsec pki --pub --in ljubKey.der | ipsec pki --issue --cacert caCert.der --cakey caKey.der --dn "C=SL, O=FRI-UL, CN=lj" --san @ljub > ljubCert.der
+ 	## ipsec pki --pub --in kranKey.der | ipsec pki --issue --cacert caCert.der --cakey caKey.der --dn "C=SL, O=FRI-UL, CN=kran" --san @kran > kranCert.der
+
+5) Move certificates into required folders:
+	## sudo mv caCert.der /etc/ipsec.d/cacerts/
+	## sudo mv ljubCert.der /etc/ipsec.d/certs/
+	## sudo mv ljubKey.der /etc/ipsec.d/private/
+Copy certificates to other routers and devices
+scp kranCert.der isp@192.168.64.150:~/
+scp kranKey.der isp@192.168.64.150:~/
+scp /etc/ipsec.d/cacerts/caCert.der  isp@192.168.64.150:~/
+
+********** IPsec connections ******************
+1) open file /etc/ipsec.conf 
+	## sudo nano /etc/ipsec.conf
+2) Replace contents of the file with:
+	config setup
+
+	conn %default
+		ikelifetime=60m
+		keylife=20m
+		rekeymargin=3m
+		keyingtries=1
+		keyexchange=ikev2
+	       # authby=secret
+	conn net-net
+		leftsubnet=10.1.0.0/16
+		leftfirewall=yes
+		leftcert=ljubCert.der
+		leftid=@ljub
+		right=192.168.64.150
+		rightsubnet=10.2.0.0/16
+		rightid=@kran
+		auto=add
+	### Roadwarrior with psk
+	conn rw
+		leftsubnet=10.0.0.0/14
+		left=%defaultroute
+		leftfirewall=yes
+		leftid=@ljub
+		right=%any
+		rightauth=psk
+		rightsourceip=10.3.0.0/16
+		auto=add
+	
+	### Roadwarrior with eap-radius	
+	conn rw
+		leftsubnet=10.0.0.0/14
+		left=%defaultroute
+		leftfirewall=yes
+		leftid=@ljub
+		right=%any
+		rightauth=eap-radius
+		rightsourceip=10.3.0.0/16
+		auto=add
+
+	
+3) Open file /etc/ipsec.secrets:
+	## sudo nano /etc/ipsec.secrets
+4) Replace the contents of the file with:
+	@ljub @kran : RSA ljubKey.der
+5) Restart the ipsec:
+	## sudo ipsec restart
+
+
+*********** To enable radius to communicate with strongswan:
+1) open /etc/strongswan.conf
+	## sudo nano /etc/strongswan.conf
+2) ## Replace :
+	charon {
+        load_modular = yes
+        load = aes des sha1 sha2 md5 pem pkcs1 gmp random nonce x509 curl revocation hmac xcbc stroke kernel-netlink socket-default fips-prf eap-radius updown
+        plugins {
+                include strongswan.d/charon/*.conf
+                eap-radius {
+                        secret = ljdostop
+                        server = 10.1.0.3
+                }
+        }
+}
+include strongswan.d/*.conf
+
+
+###################### PREPARING LJ_SERVER #################################
+############################################################################
+1) Clone base image
+2) Select linked clone, and regenerate new mac addresses option
+3) Configure first network interface to be on Internal network which is named lj_network
+
+------- Configure network interfaces ----------------- 
+1) Open file etc/netplan/01-network-manager-all.yaml
+	## sudo nano /etc/netplan/01-network-manager-all.yaml
+2) Replace contents of the opened file with following lines :
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      addresses: [10.1.0.3/16]
+      gateway4: 10.1.0.1
+      nameservers:
+        addresses: [8.8.8.8]
+3) Apply network changes with :
+	## sudo netplan apply
+
+* -------------- CONFIGURING RADIUS --------------------- *
+
+1) Add new client (NAS -- ljubljana router)
+2) Open file  /etc/freeradius/3.0/clients.conf
+	## sudo nano /etc/freeradius/3.0/clients.conf
+3) Append 
+	client ljrouter {
+        ipaddr = 10.1.0.1
+        secret = ljdostop
+        require_message_authenticator = no
+        nastype = other
+}
+4) Add new supplicant 
+	sudo nano /etc/freeradius/3.0/users
+	
+	##Append	
+	jelka  Cleartext-Password := "nismsmreka"
+		 Reply-Message = "Gozdovi so zakon !!!."
+		# Konec vnosa
+5) Add proxies
+			realm management {
+		}
+
+		home_server hs_slackers {
+			type = auth+acct
+			ipaddr = 10.2.0.5
+			port = 1812
+			secret = weareslackers
+		}
+
+		home_server_pool pool_slackers {
+			type = fail-over
+			home_server = hs_slackers
+		}
+
+		realm slackers {
+			pool = pool_slackers
+			nostrip
+		}
+
+###################### PREPARING KR_ROUTER #################################
+############################################################################
+1) Clone base image
+2) Select linked clone, and regenerate new mac addresses option
+3) Configure first network interface to be on Bridged mode
+4) Second network interface should be on Internal network which is named kranj_network
+
+----Disable ipv6----
+1) sudo nano /etc/sysctl.conf 
+	## Append lines:
+		net.ipv6.conf.all.disable_ipv6 = 1
+		net.ipv6.conf.default.disable_ipv6 = 1
+		net.ipv6.conf.lo.disable_ipv6 = 1
+	##End
+2) Apply changes :
+	# sudo sysctl -p 
+
+----- Configure network interfaces ------------
+1) Open file etc/netplan/01-network-manager-all.yaml
+	## sudo nano /etc/netplan/01-network-manager-all.yaml
+2) Replace contents of the file with following lines :
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+      dhcp-identifier: mac
+    enp0s8:
+      addresses: [10.1.0.1/16]
+
+3) Apply network changes with :
+	## sudo netplan apply
+4) Enable packet forwarding on the router :
+	## echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+5) To route internet-bound traffic from client and server subnets, configure the isp to act as a network address translator (NAT):
+	## sudo iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
+
+
+------------ MOVING THE CERTIFICATES COPYIED FROM LJUB_ROUTER ---------------
+		## sudo mv caCert.der /etc/ipsec.d/cacerts/
+		## sudo mv kranCert.der /etc/ipsec.d/certs/
+		## sudo mv kranKey.der /etc/ipsec.d/private/
+
+********** IPsec connections ******************
+1) open file /etc/ipsec.conf 
+	## sudo nano /etc/ipsec.conf
+2) Replace contents of the file with:
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+       # authby=secret
+conn net-net
+        leftsubnet=10.2.0.0/16
+        leftfirewall=yes
+        leftcert=kranCert.der
+        leftid=@kran
+        right=192.168.64.149
+        rightsubnet=10.1.0.0/16
+        rightid=@ljub
+        auto=add
+
+3) Open file /etc/ipsec.secrets:
+	## sudo nano /etc/ipsec.secrets
+4) Replace the contents of the file with:
+	@ljub @kran : RSA ljubKey.der
+5) Restart the ipsec:
+	## sudo ipsec restart
+
+
+
+###################### PREPARING KR_SERVER #################################
+############################################################################
+1) Clone base image
+2) Select linked clone, and regenerate new mac addresses option
+3) Configure first network interface to be on Internal network which is named kranj_network
+
+------- Configure network interfaces ----------------- 
+1) Open file etc/netplan/01-network-manager-all.yaml
+	## sudo nano /etc/netplan/01-network-manager-all.yaml
+2) Replace contents of the opened file with following lines :
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      addresses: [10.1.0.3/16]
+      gateway4: 10.1.0.1
+      nameservers:
+        addresses: [8.8.8.8]
+3) Apply network changes with :
+	## sudo netplan apply
+	
+
+-------------- Configuring radius ------------------------- 
+1) Add users to database:
+	## sudo nano /etc/freeradius/3.0/users
+	alice  Cleartext-Password := "exxtraproductive"
+         Reply-Message = "Delam na polno !!!."
+
+udo vim /etc/freeradius/clients.conf
+	# Dodamo
+client ljradius {
+        ipaddr = 10.1.0.3
+        secret = weareslackers
+        require_message_authenticator = no
+}
+	# Konec vnosa
+
+sudo vim /etc/freeradius/proxy.conf
+	# Dodamo
+realm slackers {
+}
+	# Konec vnosa
+	
+sudo service freeradius restart
+
+	##############################
+	# priprava Apache strežnika
+sudo a2enmod auth_radius
+sudo service apache2 restart
+
+sudo vim /etc/apache2/ports.conf
+	# Dodamo
+AddRadiusAuth localhost:1812 testing123 5:3
+AddRadiusCookieValid 1
+	# Konec
+
+sudo vim /etc/apache2/sites-available/000-default.conf
+ 	# Dodamo
+	<Directory /var/www/html>
+	    Options Indexes FollowSymLinks MultiViews
+	    AllowOverride None
+	
+	    # Use basic password authentication
+	    # AuthType Digest won't work with RADIUS
+	    AuthType Basic
+	
+	    # Tell the user the realm to which they are authenticating.
+	    AuthName "RADIUS Authentication for my site"
+	
+	    # Set RADIUS to be provider for this basic authentication
+	    AuthBasicProvider radius
+	
+	    # Require that mod_auth_radius returns a valid user,
+	    # otherwise access is denied.
+	    Require valid-user
+	</Directory>
+ 	# Konec
+
+ sudo service apache2 restart
+###################### PREPARING LJUB_ROADWARRIOR #################################
+############################################################################
+1) Clone base image
+2) Select linked clone, and regenerate new mac addresses option
+3) Configure first network interface to be on Bridged 
+
+*********8 Moving certificates
+sudo mv caCert.der /etc/ipsec.d/cacerts/
+
+************* Setting up roadwarrior vpn 
+1) Open file /etc/ipsec.conf
+2) Replace its contents with the following:
+
+	config setup
+
+	conn %default
+		ikelifetime=60m
+		keylife=20m
+		rekeymargin=3m
+		keyingtries=1
+		keyexchange=ikev2
+		#authby=secret
+
+	conn rw
+		left=%defaultroute
+		leftsourceip=%config
+		leftid=@roadwar
+		leftauth=psk
+		right=192.168.64.149
+		rightsubnet=10.0.0.0/14
+		rightid=ljub
+		auto=add
+3) sudo ipsec restart 
+4) sudo ipsec up rw
+
+
+
+

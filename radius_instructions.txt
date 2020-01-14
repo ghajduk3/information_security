@@ -16,4 +16,59 @@ In order to register such a client:
 
 In order to add users to the freeradius database:
 1) sudo nano /etc/freeradius/3.0/users
-2) 
+2) "alice" Cleartext-Password "password"
+
+** Stop the freeradius service with a command ------> sudo service freeradius stop
+** Testing the radius ------- > sudo freeradius -X -d /etc/freeradius/3.0.
+** Test wether the radius is able to answer the requests 
+	-- echo "User-Name=alice, User-Password=password" | radclient 127.0.0.1 auth testing123 -x
+
+------------- Exercise 2: HTTP Basic authentication with Apache and FreeRADIUS ---------------
+1)Enable auth_radius module for apache and restart the apache server.
+	**sudo a2enmod auth_radius
+	**sudo service apache2 restart
+2) Configure Apache Radius settings in /etc/apache2/ports.conf
+	# FreeRADIUS runs on localhost:1812 (standard RADIUS port).
+	# Apache will authenticate itself to the AAA server with PSK 'testing123'.
+	# The request shall time-out after 5 seconds, and retry at most 3 times.
+	AddRadiusAuth localhost:1812 testing123 5:3
+
+	# Next line configures the time (in minutes) in which the authentication cookie
+	# set by the Apache server expires
+	AddRadiusCookieValid 1
+3)Next, tell Apache which pages require authentication. Open /etc/apache2/sites-available/000-default.conf and add the following lines inside <VirtualHost *:80> block. (Since, folder /var/www/html represents Apache's HTTP root folder, this in effect covers all pages.)
+	<Directory /var/www/html>
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride None
+
+    # ADD LINE 1
+    # Use basic password authentication
+    # AuthType Digest won't work with RADIUS
+    AuthType Basic
+
+    # ADD LINE 2
+    # Tell the user the realm to which they are authenticating.
+    AuthName "RADIUS Authentication for my site"
+
+    # ADD LINE 3
+    # Set RADIUS to be provider for this basic authentication
+    AuthBasicProvider radius
+
+    # ADD LINE 4
+    # Require that mod_auth_radius returns a valid user,
+    # otherwise access is denied.
+    <Directory>
+
+sudo service apache2 reload
+
+to start freeradius sudo freeradius -X -d /etc/freeradius/3.0
+
+------------- Exercise 3: Roaming and federation------------------
+
+
+
+
+
+
+    Require valid-user
+</Directory>

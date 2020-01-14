@@ -123,3 +123,42 @@ iptables -A INPUT -p icmp --icmp-type echo-request \
 The limit feature in iptables specifies the maximum average number of matches to allow per second. You can specify time intervals in the format /second, /minute, /hour, or /day, or you can use abbreviations so that 3/second is the same as 3/s.
 
 In this example, ICMP echo requests are restricted to no more than one per second. When tuned correctly, this feature allows you to filter unusually high volumes of traffic that characterize denial of service (DOS) attacks and Internet worms. 
+
+
+
+
+
+
+# accept all routed
+spremeni 
+iptables --policy FORWARD DROP
+v 
+iptables --policy FORWARD ACCEPT
+
+dodaj: 
+
+# ze vzpostavljene
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# allow in,out icmp
+iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT 
+iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT 
+
+# allow out dns
+iptables -A OUTPUT -p udp -d $NAMESERVER --dport 53 -m state --state NEW -j ACCEPT
+
+# allow in isakmp
+iptables -A INPUT -p udp --dport 500 -m state --state NEW -j ACCEPT
+iptables -A INPUT -p udp --dport 4500 -m state --state NEW -j ACCEPT
+
+# allow out radius
+iptables -A OUTPUT -p udp --dport 1812 -m state --state NEW -j ACCEPT
+iptables -A OUTPUT -p udp --dport 1813 -m state --state NEW -j ACCEPT
+iptables -A OUTPUT -p udp --dport 1814 -m state --state NEW -j ACCEPT
+
+
+
+
+
+

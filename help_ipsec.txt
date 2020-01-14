@@ -1,0 +1,143 @@
+####################################################################################
+################# NECCESSARY INSTALLATIONS #########################################
+sudo apt update
+sudo apt install freeradius freeradius-utils apache2 libapache2-mod-auth-radius
+sudo apt install strongswan strongswan-pki libcharon-extra-plugins ipsec-tools apache2 wireshark
+sudo usermod -a -G wireshark $USER
+
+**************************
+# Onemogocimo IPv6
+sudo vim /etc/sysctl.conf
+	#	Dodaj vrstice:
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+	#	konec vnosa
+sudo sysctl -p
+
+
+############################### RW_ROUTER PREPARATIONS #############################
+####################################################################################
+Configuration of the network interfaces :
+
+	1) Edit the /etc/netplan/01-network-manager-all.yaml and insert following :
+	network:
+	  version: 2
+	  ethernets:
+	    enp0s3:
+	      dhcp4: true
+	      dhcp-identifier: mac
+	    enp0s8:
+	      addresses: [10.1.0.1/16]
+
+	2) sudo netplan apply ---------- In order to apply changes
+	3) In order to apply packet forwarding : echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+	4) Finally, to route internet-bound traffic from client and server subnets, configure the isp 			to act as a network address translator (NAT): 
+	sudo iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE.	
+
+
+VPN ROADWARRIOR INSTALLATION:
+1) Edit the /etc/ipsec.conf with sudo nano /etc/ipsec.conf 
+
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+        authby=secret
+
+conn rw
+        left=192.168.64.143
+        leftsubnet=10.1.0.0/16
+        leftfirewall=yes
+        leftid=@rw
+	right=%any
+        rightsourceip=10.3.0.0/16
+        auto=add
+2) Edit the /etc/ipsec.secrets and add:
+: PSK "mojkljuc"
+3) restart ipsec with : sudo ipsec restart
+
+################ CONFIGURE RADIUS ########################
+sudo apt install ipsec-tools strongswan freeradius freeradius-utils libcharon-extra-plugins
+
+RW_ROUTER IS ACTING LIKE NAS --------- we should add to /etc/strongswan.conf:
+charon {
+        load_modular = yes
+        load = aes des sha1 sha2 md5 pem pkcs1 gmp random nonce x509 curl revoc$
+        plugins {
+                include strongswan.d/charon/*.conf
+                eap-radius {
+                        secret = rwdostop
+                        server = 10.1.0.2 ---- actual radius server
+                }
+        }
+}
+
+
+############################### RW_SERVER PREPARATIONS #############################
+####################################################################################
+1) Edit the /etc/netplan/01-network-manager-all.yaml and insert following :
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      addresses: [10.1.0.2/16]
+      gateway4: 10.1.0.1
+      nameservers:
+        addresses: [8.8.8.8]
+
+On the server(radius server) we first want to add a RADIUS CLIENT (NAS) which is rw_router:
+1)sudo nano /etc/freeradius/3.0/clients.conf
+client rwrouter {
+        ipaddr = 10.1.0.1
+        secret = rwdostop
+        require_message_authenticator = no
+        nastype = other
+}
+
+
+
+
+
+
+
+############################### ROADWARRIOR PREPARATIONS #############################
+####################################################################################
+VPN ROADWARRIOR INSTALLATION:
+1) Edit the /etc/ipsec.conf with sudo nano /etc/ipsec.conf 
+config setup
+
+conn %default
+        ikelifetime=60m
+        keylife=20m
+        rekeymargin=3m
+        keyingtries=1
+        keyexchange=ikev2
+        authby=secret
+
+conn rw
+        left=192.168.64.144
+        leftsourceip=%config
+        right=192.168.64.143
+        rightsubnet=10.1.0.0/16
+        rightid=@rw
+        auto=add
+2) Edit the /etc/ipsec.secrets and add :
+PSK : "Ovo je kljuc"
+
+3) restart ipsec with : sudo ipsec restart in order to apply changes 
+4) To start the connection sudo ipsec up rw 
+
+
+
+
+
+
+
+
+2) sudo netplan apply  ---------- to apply changes
+3) ifconfig --- to check have changes been apllied

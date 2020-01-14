@@ -35,7 +35,7 @@ conn net-net
         right=192.168.64.134
         rightsubnet=10.2.0.0/16
         rightid=@kr
-        auto=add
+        auto=addlef
 
 
 conn rw
